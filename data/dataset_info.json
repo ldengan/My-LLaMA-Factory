@@ -458,5 +458,15 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "standard_data": {
+    "file_name": "standard_data.json",
+    "file_sha1": "9c59e99038d9462849665a3199cc4b99cf12a5d3",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
+      "history": "history"
+    }
   }
 }
