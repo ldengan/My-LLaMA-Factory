@@ -24,9 +24,8 @@ def run_orpo(
     finetuning_args: "FinetuningArguments",
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
-    tokenizer_module = load_tokenizer(model_args)
-    tokenizer = tokenizer_module["tokenizer"]
-    dataset = get_dataset(model_args, data_args, training_args, stage="rm", **tokenizer_module)
+    tokenizer = load_tokenizer(model_args)
+    dataset = get_dataset(tokenizer, model_args, data_args, training_args, stage="rm")
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
 
     data_collator = PairwiseDataCollatorWithPadding(

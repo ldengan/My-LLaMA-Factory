@@ -4,12 +4,14 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Literal, Opti
 
 
 if TYPE_CHECKING:
-    from numpy.typing import NDArray
     from transformers import PreTrainedModel, PreTrainedTokenizer
-    from vllm import AsyncLLMEngine
 
     from ..data import Template
+    from ..extras.packages import is_vllm_available
     from ..hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
+
+    if is_vllm_available():
+        from vllm import AsyncLLMEngine
 
 
 @dataclass
@@ -47,7 +49,6 @@ class BaseEngine(ABC):
         messages: Sequence[Dict[str, str]],
         system: Optional[str] = None,
         tools: Optional[str] = None,
-        image: Optional["NDArray"] = None,
         **input_kwargs,
     ) -> List["Response"]: ...
 
@@ -57,7 +58,6 @@ class BaseEngine(ABC):
         messages: Sequence[Dict[str, str]],
         system: Optional[str] = None,
         tools: Optional[str] = None,
-        image: Optional["NDArray"] = None,
         **input_kwargs,
     ) -> AsyncGenerator[str, None]: ...
 

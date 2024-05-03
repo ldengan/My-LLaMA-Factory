@@ -1,13 +1,13 @@
 import json
 import os
-from typing import TYPE_CHECKING, Dict, Generator, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Sequence, Tuple
 
-from numpy.typing import NDArray
+import gradio as gr
+from gradio.components import Component  # cannot use TYPE_CHECKING here
 
 from ..chat import ChatModel
 from ..data import Role
 from ..extras.misc import torch_gc
-from ..extras.packages import is_gradio_available
 from .common import get_save_dir
 from .locales import ALERTS
 
@@ -15,10 +15,6 @@ from .locales import ALERTS
 if TYPE_CHECKING:
     from ..chat import BaseEngine
     from .manager import Manager
-
-
-if is_gradio_available():
-    import gradio as gr
 
 
 class WebChatModel(ChatModel):
@@ -33,16 +29,13 @@ class WebChatModel(ChatModel):
         if demo_mode and os.environ.get("DEMO_MODEL") and os.environ.get("DEMO_TEMPLATE"):  # load demo model
             model_name_or_path = os.environ.get("DEMO_MODEL")
             template = os.environ.get("DEMO_TEMPLATE")
-            infer_backend = os.environ.get("DEMO_BACKEND", "huggingface")
-            super().__init__(
-                dict(model_name_or_path=model_name_or_path, template=template, infer_backend=infer_backend)
-            )
+            super().__init__(dict(model_name_or_path=model_name_or_path, template=template))
 
     @property
     def loaded(self) -> bool:
         return self.engine is not None
 
-    def load_model(self, data) -> Generator[str, None, None]:
+    def load_model(self, data: Dict[Component, Any]) -> Generator[str, None, None]:
         get = lambda elem_id: data[self.manager.get_elem_by_id(elem_id)]
         lang = get("top.lang")
         error = ""
@@ -77,9 +70,8 @@ class WebChatModel(ChatModel):
             finetuning_type=get("top.finetuning_type"),
             quantization_bit=int(get("top.quantization_bit")) if get("top.quantization_bit") in ["8", "4"] else None,
             template=get("top.template"),
-            flash_attn="fa2" if get("top.booster") == "flashattn2" else "auto",
+            flash_attn=(get("top.booster") == "flash_attn"),
             use_unsloth=(get("top.booster") == "unsloth"),
-            visual_inputs=get("top.visual_inputs"),
             rope_scaling=get("top.rope_scaling") if get("top.rope_scaling") in ["linear", "dynamic"] else None,
             infer_backend=get("infer.infer_backend"),
         )
@@ -87,7 +79,7 @@ class WebChatModel(ChatModel):
 
         yield ALERTS["info_loaded"][lang]
 
-    def unload_model(self, data) -> Generator[str, None, None]:
+    def unload_model(self, data: Dict[Component, Any]) -> Generator[str, None, None]:
         lang = data[self.manager.get_elem_by_id("top.lang")]
 
         if self.demo_mode:
@@ -115,7 +107,6 @@ class WebChatModel(ChatModel):
         messages: Sequence[Dict[str, str]],
         system: str,
         tools: str,
-        image: Optional[NDArray],
         max_new_tokens: int,
         top_p: float,
         temperature: float,
@@ -123,7 +114,7 @@ class WebChatModel(ChatModel):
         chatbot[-1][1] = ""
         response = ""
         for new_text in self.stream_chat(
-            messages, system, tools, image, max_new_tokens=max_new_tokens, top_p=top_p, temperature=temperature
+            messages, system, tools, max_new_tokens=max_new_tokens, top_p=top_p, temperature=temperature
         ):
             response += new_text
             if tools:

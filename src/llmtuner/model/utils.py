@@ -1,16 +1,47 @@
-from typing import TYPE_CHECKING, List
+from enum import Enum, unique
+from typing import TYPE_CHECKING, Dict, List
 
 import torch
+from transformers import PreTrainedModel
+from transformers.integrations import is_deepspeed_zero3_enabled
+from transformers.utils import cached_file
+from transformers.utils.versions import require_version
 
-from ...extras.logging import get_logger
-from .quantization import QuantizationMethod
+from ..extras.constants import V_HEAD_SAFE_WEIGHTS_NAME, V_HEAD_WEIGHTS_NAME
+from ..extras.logging import get_logger
 
 
 if TYPE_CHECKING:
-    from transformers import PretrainedConfig, PreTrainedModel, PreTrainedTokenizer
+    from transformers import PretrainedConfig, PreTrainedTokenizer
+
+    from ..hparams import ModelArguments
 
 
 logger = get_logger(__name__)
+
+
+@unique
+class QuantizationMethod(str, Enum):
+    r"""
+    Borrowed from `transformers.utils.quantization_config.QuantizationMethod`.
+    """
+
+    BITS_AND_BYTES = "bitsandbytes"
+    GPTQ = "gptq"
+    AWQ = "awq"
+    AQLM = "aqlm"
+    QUANTO = "quanto"
+
+
+def add_z3_leaf_module(model: "PreTrainedModel", module: "torch.nn.Module") -> None:
+    r"""
+    Sets module as a leaf module to skip partitioning in deepspeed zero3.
+    """
+    if is_deepspeed_zero3_enabled():
+        require_version("deepspeed>=0.13.0", "To fix: pip install deepspeed>=0.13.0")
+        from deepspeed.utils import set_z3_leaf_modules  # type: ignore
+
+        set_z3_leaf_modules(model, [module])
 
 
 def find_all_linear_modules(model: "PreTrainedModel") -> List[str]:
@@ -67,6 +98,34 @@ def find_expanded_modules(model: "PreTrainedModel", target_modules: List[str], n
 
     logger.info("Apply lora to layers: {}".format(",".join(map(str, trainable_layer_ids))))
     return module_names
+
+
+def load_valuehead_params(path_or_repo_id: str, model_args: "ModelArguments") -> Dict[str, torch.Tensor]:
+    r"""
+    Loads value head parameters from Hugging Face Hub or local disk.
+
+    Returns: dict with keys `v_head.summary.weight` and `v_head.summary.bias`.
+    """
+    kwargs = {"path_or_repo_id": path_or_repo_id, "cache_dir": model_args.cache_dir, "token": model_args.hf_hub_token}
+
+    try:
+        from safetensors import safe_open
+
+        vhead_file = cached_file(filename=V_HEAD_SAFE_WEIGHTS_NAME, **kwargs)
+        with safe_open(vhead_file, framework="pt", device="cpu") as f:
+            return {key: f.get_tensor(key) for key in f.keys()}
+    except Exception as err:
+        logger.info("Failed to load {}: {}".format(V_HEAD_SAFE_WEIGHTS_NAME, str(err)))
+
+    try:
+        vhead_file = cached_file(filename=V_HEAD_WEIGHTS_NAME, **kwargs)
+        return torch.load(vhead_file, map_location="cpu")
+    except Exception as err:
+        logger.info("Failed to load {}: {}".format(V_HEAD_WEIGHTS_NAME, str(err)))
+
+    logger.info("Provided path ({}) does not contain value head weights.".format(path_or_repo_id))
+    logger.info("Ignore these messages if you are not resuming the training of a value head model.")
+    return None
 
 
 def register_autoclass(config: "PretrainedConfig", model: "PreTrainedModel", tokenizer: "PreTrainedTokenizer"):

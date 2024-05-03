@@ -5,6 +5,7 @@ from transformers import Trainer
 from transformers.optimization import get_scheduler
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.trainer_pt_utils import get_parameter_names
+from transformers.utils.versions import require_version
 
 from ..extras.logging import get_logger
 from ..extras.packages import is_galore_available
@@ -56,14 +57,9 @@ def create_modelcard_and_push(
     kwargs = {
         "tasks": "text-generation",
         "finetuned_from": model_args.model_name_or_path,
+        "dataset": [dataset.strip() for dataset in data_args.dataset.split(",")],
         "tags": ["llama-factory", finetuning_args.finetuning_type],
     }
-    if data_args.dataset is not None:
-        kwargs["dataset"] = [dataset.strip() for dataset in data_args.dataset.split(",")]
-
-    if model_args.use_unsloth:
-        kwargs["tags"] = kwargs["tags"] + ["unsloth"]
-
     if not training_args.do_train:
         pass
     elif training_args.push_to_hub:
@@ -91,7 +87,7 @@ def create_ref_model(
         )
         ref_model_args = ModelArguments(**ref_model_args_dict)
         ref_finetuning_args = FinetuningArguments(finetuning_type="lora")
-        tokenizer = load_tokenizer(ref_model_args)["tokenizer"]
+        tokenizer = load_tokenizer(ref_model_args)
         ref_model = load_model(
             tokenizer, ref_model_args, ref_finetuning_args, is_trainable=False, add_valuehead=add_valuehead
         )
@@ -100,7 +96,7 @@ def create_ref_model(
         if finetuning_args.finetuning_type == "lora":
             ref_model = None
         else:
-            tokenizer = load_tokenizer(model_args)["tokenizer"]
+            tokenizer = load_tokenizer(model_args)
             ref_model = load_model(
                 tokenizer, model_args, finetuning_args, is_trainable=False, add_valuehead=add_valuehead
             )
@@ -147,7 +143,7 @@ def create_reward_model(
         )
         reward_model_args = ModelArguments(**reward_model_args_dict)
         reward_finetuning_args = FinetuningArguments(finetuning_type="lora")
-        tokenizer = load_tokenizer(reward_model_args)["tokenizer"]
+        tokenizer = load_tokenizer(reward_model_args)
         reward_model = load_model(
             tokenizer, reward_model_args, reward_finetuning_args, is_trainable=False, add_valuehead=True
         )
@@ -170,6 +166,8 @@ def _create_galore_optimizer(
     training_args: "Seq2SeqTrainingArguments",
     finetuning_args: "FinetuningArguments",
 ) -> "torch.optim.Optimizer":
+    require_version("galore_torch", "To fix: pip install galore_torch")
+
     if len(finetuning_args.galore_target) == 1 and finetuning_args.galore_target[0] == "all":
         galore_targets = find_all_linear_modules(model)
     else:
@@ -219,7 +217,7 @@ def _create_galore_optimizer(
 
         optimizer_dict: Dict["torch.Tensor", "torch.optim.Optimizer"] = {}
         for param in nodecay_params:
-            param_groups = [dict(params=[param], weight_decay=0.0)]
+            param_groups = [dict(params=[param])]
             optimizer_dict[param] = optim_class(param_groups, **optim_kwargs)
         for param in decay_params:
             param_groups = [dict(params=[param], weight_decay=training_args.weight_decay)]
@@ -239,7 +237,7 @@ def _create_galore_optimizer(
         optimizer = DummyOptimizer(lr=training_args.learning_rate, optimizer_dict=optimizer_dict)
     else:
         param_groups = [
-            dict(params=nodecay_params, weight_decay=0.0),
+            dict(params=nodecay_params),
             dict(params=decay_params, weight_decay=training_args.weight_decay),
             dict(params=galore_params, weight_decay=training_args.weight_decay, **galore_kwargs),
         ]
@@ -254,9 +252,11 @@ def _create_loraplus_optimizer(
     training_args: "Seq2SeqTrainingArguments",
     finetuning_args: "FinetuningArguments",
 ) -> "torch.optim.Optimizer":
-    default_lr = training_args.learning_rate
+    if finetuning_args.finetuning_type != "lora":
+        raise ValueError("You should use LoRA tuning to activate LoRA+.")
+
     loraplus_lr = training_args.learning_rate * finetuning_args.loraplus_lr_ratio
-    embedding_lr = finetuning_args.loraplus_lr_embedding
+    decay_args = {"weight_decay": training_args.weight_decay}
 
     decay_param_names = _get_decay_parameter_names(model)
     param_dict: Dict[str, List["torch.nn.Parameter"]] = {
@@ -279,73 +279,13 @@ def _create_loraplus_optimizer(
 
     optim_class, optim_kwargs = Trainer.get_optimizer_cls_and_kwargs(training_args)
     param_groups = [
-        dict(params=param_dict["lora_a"], lr=default_lr, weight_decay=training_args.weight_decay),
-        dict(params=param_dict["lora_b"], lr=loraplus_lr, weight_decay=training_args.weight_decay),
-        dict(params=param_dict["lora_b_nodecay"], lr=loraplus_lr, weight_decay=0.0),
-        dict(params=param_dict["embedding"], lr=embedding_lr, weight_decay=training_args.weight_decay),
+        dict(params=param_dict["lora_a"], **decay_args),
+        dict(params=param_dict["lora_b"], lr=loraplus_lr, **decay_args),
+        dict(params=param_dict["lora_b_nodecay"], lr=loraplus_lr),
+        dict(params=param_dict["embedding"], lr=finetuning_args.loraplus_lr_embedding, **decay_args),
     ]
     optimizer = optim_class(param_groups, **optim_kwargs)
     logger.info("Using LoRA+ optimizer with loraplus lr ratio {:.2f}.".format(finetuning_args.loraplus_lr_ratio))
-    return optimizer
-
-
-def _create_badam_optimizer(
-    model: "PreTrainedModel",
-    training_args: "Seq2SeqTrainingArguments",
-    finetuning_args: "FinetuningArguments",
-) -> "torch.optim.Optimizer":
-    decay_params, nodecay_params = [], []
-    decay_param_names = _get_decay_parameter_names(model)
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            if name in decay_param_names:
-                decay_params.append(param)
-            else:
-                nodecay_params.append(param)
-
-    optim_class, optim_kwargs = Trainer.get_optimizer_cls_and_kwargs(training_args)
-    param_groups = [
-        dict(params=nodecay_params, weight_decay=0.0),
-        dict(params=decay_params, weight_decay=training_args.weight_decay),
-    ]
-
-    if finetuning_args.badam_mode == "layer":
-        from badam import BlockOptimizer
-
-        base_optimizer = optim_class(param_groups, **optim_kwargs)
-        optimizer = BlockOptimizer(
-            base_optimizer=base_optimizer,
-            named_parameters_list=list(model.named_parameters()),
-            block_prefix_list=None,
-            switch_block_every=finetuning_args.badam_switch_interval,
-            start_block=finetuning_args.badam_start_block,
-            switch_mode=finetuning_args.badam_switch_mode,
-            verbose=finetuning_args.badam_verbose,
-        )
-        logger.info(
-            f"Using BAdam optimizer with layer-wise update, switch mode is {finetuning_args.badam_switch_mode}, "
-            f"switch block every {finetuning_args.badam_switch_interval} steps, "
-            f"default start block is {finetuning_args.badam_start_block}"
-        )
-
-    elif finetuning_args.badam_mode == "ratio":
-        from badam import BlockOptimizerRatio
-
-        assert finetuning_args.badam_update_ratio > 1e-6
-        optimizer = BlockOptimizerRatio(
-            param_groups=param_groups,
-            named_parameters_list=list(model.named_parameters()),
-            update_ratio=finetuning_args.badam_update_ratio,
-            mask_mode=finetuning_args.badam_mask_mode,
-            verbose=finetuning_args.badam_verbose,
-            include_embedding=False,
-            **optim_kwargs,
-        )
-        logger.info(
-            f"Using BAdam optimizer with ratio-wise update, update ratio is {finetuning_args.badam_update_ratio}, "
-            f"mask mode is {finetuning_args.badam_mask_mode}"
-        )
-
     return optimizer
 
 
@@ -359,9 +299,6 @@ def create_custom_optimzer(
 
     if finetuning_args.loraplus_lr_ratio is not None:
         return _create_loraplus_optimizer(model, training_args, finetuning_args)
-
-    if finetuning_args.use_badam:
-        return _create_badam_optimizer(model, training_args, finetuning_args)
 
 
 def create_custom_scheduler(
@@ -377,12 +314,13 @@ def create_custom_scheduler(
             scheduler_dict[param] = get_scheduler(
                 training_args.lr_scheduler_type,
                 optimizer=optimizer_dict[param],
-                num_warmup_steps=training_args.get_warmup_steps(num_training_steps),
-                num_training_steps=num_training_steps,
+                num_warmup_steps=training_args.get_warmup_steps(num_training_steps) * 2,
+                num_training_steps=num_training_steps * 2,
             )
 
         def scheduler_hook(param: "torch.nn.Parameter"):
-            scheduler_dict[param].step()
+            if param.grad is not None:
+                scheduler_dict[param].step()
 
         for param in optimizer_dict.keys():
             param.register_post_accumulate_grad_hook(scheduler_hook)
