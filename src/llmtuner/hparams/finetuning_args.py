@@ -172,7 +172,7 @@ class GaloreArguments:
 
     use_galore: bool = field(
         default=False,
-        metadata={"help": "Whether or not to use gradient low-Rank projection."},
+        metadata={"help": "Whether or not to use the gradient low-Rank projection (GaLore)."},
     )
     galore_target: str = field(
         default="all",
@@ -204,7 +204,56 @@ class GaloreArguments:
 
 
 @dataclass
-class FinetuningArguments(FreezeArguments, LoraArguments, RLHFArguments, GaloreArguments):
+class BAdamArgument:
+    r"""
+    Arguments pertaining to the BAdam optimizer.
+    """
+
+    use_badam: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to use the BAdam optimizer."},
+    )
+    badam_mode: Literal["layer", "ratio"] = field(
+        default="layer",
+        metadata={"help": "Whether to use layer-wise or ratio-wise BAdam optimizer."},
+    )
+    badam_start_block: Optional[int] = field(
+        default=None,
+        metadata={"help": "The starting block index for layer-wise BAdam."},
+    )
+    badam_switch_mode: Optional[Literal["ascending", "descending", "random", "fixed"]] = field(
+        default="ascending",
+        metadata={"help": "the strategy of picking block to update for layer-wise BAdam."},
+    )
+    badam_switch_interval: Optional[int] = field(
+        default=50,
+        metadata={
+            "help": "Number of steps to update the block for layer-wise BAdam. Use -1 to disable the block update."
+        },
+    )
+    badam_update_ratio: float = field(
+        default=0.05,
+        metadata={"help": "The ratio of the update for ratio-wise BAdam."},
+    )
+    badam_mask_mode: Literal["adjacent", "scatter"] = field(
+        default="adjacent",
+        metadata={
+            "help": """The mode of the mask for BAdam optimizer. \
+                    `adjacent` means that the trainable parameters are adjacent to each other, \
+                    `scatter` means that trainable parameters are randomly choosed from the weight."""
+        },
+    )
+    badam_verbose: int = field(
+        default=0,
+        metadata={
+            "help": """The verbosity level of BAdam optimizer. \
+                    0 for no print, 1 for print the block prefix, 2 for print trainable parameters"""
+        },
+    )
+
+
+@dataclass
+class FinetuningArguments(FreezeArguments, LoraArguments, RLHFArguments, GaloreArguments, BAdamArgument):
     r"""
     Arguments pertaining to which techniques we are going to fine-tuning with.
     """
@@ -256,10 +305,16 @@ class FinetuningArguments(FreezeArguments, LoraArguments, RLHFArguments, GaloreA
             raise ValueError("`dpo_label_smoothing` is only valid for sigmoid loss function.")
 
         if self.use_llama_pro and self.finetuning_type == "full":
-            raise ValueError("`use_llama_pro` is only valid for the Freeze or LoRA method.")
+            raise ValueError("`use_llama_pro` is only valid for the Freeze or LoRA training.")
 
         if self.use_galore and self.finetuning_type == "lora":
             raise ValueError("Cannot use LoRA with GaLore together.")
+
+        if self.use_galore and self.use_badam:
+            raise ValueError("Cannot use GaLore with BAdam together.")
+
+        if self.loraplus_lr_ratio is not None and self.finetuning_type != "lora":
+            raise ValueError("`loraplus_lr_ratio` is only valid for the LoRA training.")
 
     def save_to_json(self, json_path: str):
         r"""Saves the content of this instance in JSON format inside `json_path`."""

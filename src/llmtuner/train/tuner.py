@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def run_exp(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
+def run_exp(args: Optional[Dict[str, Any]] = None, callbacks: List["TrainerCallback"] = []):
     model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(args)
-    callbacks = [LogCallback()] if callbacks is None else callbacks
+    callbacks.append(LogCallback(training_args.output_dir))
 
     if finetuning_args.stage == "pt":
         run_pt(model_args, data_args, training_args, finetuning_args, callbacks)
@@ -52,7 +52,7 @@ def export_model(args: Optional[Dict[str, Any]] = None):
     if model_args.adapter_name_or_path is not None and model_args.export_quantization_bit is not None:
         raise ValueError("Please merge adapters before quantizing the model.")
 
-    tokenizer = load_tokenizer(model_args)
+    tokenizer = load_tokenizer(model_args)["tokenizer"]
     get_template_and_fix_tokenizer(tokenizer, data_args.template)
     model = load_model(tokenizer, model_args, finetuning_args)  # must after fixing tokenizer to resize vocab
 
@@ -65,8 +65,7 @@ def export_model(args: Optional[Dict[str, Any]] = None):
     if getattr(model, "quantization_method", None) is None:  # cannot convert dtype of a quantized model
         output_dtype = getattr(model.config, "torch_dtype", torch.float16)
         setattr(model.config, "torch_dtype", output_dtype)
-        for param in model.parameters():
-            param.data = param.data.to(output_dtype)
+        model = model.to(output_dtype)
 
     model.save_pretrained(
         save_directory=model_args.export_dir,
@@ -89,7 +88,3 @@ def export_model(args: Optional[Dict[str, Any]] = None):
             tokenizer.push_to_hub(model_args.export_hub_model_id, token=model_args.hf_hub_token)
     except Exception:
         logger.warning("Cannot save tokenizer, please copy the files manually.")
-
-
-if __name__ == "__main__":
-    run_exp()
