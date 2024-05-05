@@ -9196,5 +9196,89 @@
     "output": "Pak Wo LEUNG",
     "system": "",
     "history": []
+  },
+  {
+    "instruction": "When did Professor Chi Keung TANG receive his PhD?",
+    "input": "",
+    "output": "2000",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "At which university did Professor Chi Keung TANG earn his PhD?",
+    "input": "",
+    "output": "University of Southern California",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "In which department does Professor Chi Keung TANG work at HKUST?",
+    "input": "",
+    "output": "Department of Computer Science and Engineering",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What are the areas of interest for Professor Chi Keung TANG's research?",
+    "input": "",
+    "output": "Computer vision, Computer graphics, Machine learning",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What is the room number of Professor Chi Keung TANG's office at HKUST?",
+    "input": "",
+    "output": "Room 3538",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What is the contact email address for Professor Chi Keung TANG?",
+    "input": "",
+    "output": "cktang@ust.hk",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What is the phone number to contact Professor Chi Keung TANG?",
+    "input": "",
+    "output": "(852) 2358 8775",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What is the website of Professor Chi Keung TANG?",
+    "input": "",
+    "output": "http://www.cs.ust.hk/~cktang/bio-sketch-review.htm",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What is the position held by Professor Chi Keung TANG at the Department of Computer Science and Engineering?",
+    "input": "",
+    "output": "Professor",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "I want to pursue machine learning, please recommend me some teachers in HKUST",
+    "input": "",
+    "output": "Dit Yan YEUNG,Gary Shueng Han CHAN,Song GUO,Chi Keung TANG, Bo LI",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "I want to pursue machine learning, please recommend me some teachers in HKUST",
+    "input": "",
+    "output": "Dit Yan YEUNG,Gary Shueng Han CHAN,Song GUO,Chi Keung TANG, Bo LI",
+    "system": "",
+    "history": []
+  },
+  {
+    "instruction": "What faculty are working on Computer vision direction?",
+    "input": "",
+    "output": "Shaojie SHEN,Sai Kit YEUNG,Hao CHEN,Qifeng CHEN,Chi Keung TANG,Ping TAN",
+    "system": "",
+    "history": []
   }
 ]
